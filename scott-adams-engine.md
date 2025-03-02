@@ -8,7 +8,7 @@
    - [File Format Specification](#file-format-specification)
    - [Header Structure](#header-structure)
    - [Rooms](#rooms)
-   - [Items](#items)
+   - [Objects](#objects)
    - [Actions](#actions)
    - [Messages](#messages)
    - [Vocabulary](#vocabulary)
@@ -28,7 +28,7 @@
    - [Game Loop](#game-loop)
    - [Parser Implementation](#parser-implementation)
    - [Command Processing](#command-processing)
-   - [Item Handling](#item-handling)
+   - [Object Handling](#object-handling)
    - [Movement Commands](#movement-commands)
    - [Save/Load System](#saveload-system)
    - [Display Options](#display-options)
@@ -51,7 +51,7 @@ The engine's distinctive terse prose style was a direct result of memory constra
 
 ## Game Engine Architecture Overview
 
-The Scott Adams adventure engine uses a data-driven design where the game world, items, and game logic are stored in a database. The engine conceptually consists of:
+The Scott Adams adventure engine uses a data-driven design where the game world, objects, and game logic are stored in a database. The engine conceptually consists of:
 
 1. **Parser**: Interprets user input against known vocabulary
 2. **Condition Checker**: Evaluates game state against action conditions
@@ -68,7 +68,7 @@ The database format is highly structured and contains several distinct sections 
 
 * Stores values as ASCII text with delimiters
 * Uses line-based organization with section markers
-* Has each data item on a separate line
+* Has each data object on a separate line
 * Makes the database human-readable and editable
 
 The data is typically organized in the following sequence:
@@ -86,7 +86,7 @@ Here's an example of how the beginning of a game data file might look (from Adve
 
 ```
 5953    // Number of bytes for text storage
-65      // NumItems (highest numbered object)
+65      // NumObjects (highest numbered object)
 169     // NumActions
 69      // NumWords
 33      // NumRooms
@@ -107,11 +107,11 @@ The header contains numerical values defining the structure and constraints of t
 
 ```
 Header {
-    NumItems          // Number of items in the game (highest numbered object)
+    NumObjects          // Number of objects in the game (highest numbered object)
     NumActions        // Number of actions in the game (highest numbered action)
     NumWords          // Number of vocabulary words (verbs/nouns)
     NumRooms          // Number of rooms in the game (highest numbered room)
-    MaxCarry          // Maximum items player can carry
+    MaxCarry          // Maximum objects player can carry
     PlayerRoom        // Starting room for the player
     Treasures         // Number of treasures in the game
     WordLength        // Word length for vocabulary matching
@@ -124,7 +124,7 @@ Header {
 }
 ```
 
-Note that in the actual data file, some of these values are stored as highest numbered item/action/etc., meaning the actual count would be this number plus one (since numbering starts at 0).
+Note that in the actual data file, some of these values are stored as highest numbered object/action/etc., meaning the actual count would be this number plus one (since numbering starts at 0).
 
 ### Rooms
 
@@ -159,20 +159,20 @@ If a room description begins with an asterisk, the engine displays it directly. 
 
 Room 0 is a special "storeroom" for objects not currently in play. The player cannot normally access this room. The last room is often reserved as a "limbo" where the player is sent when they die.
 
-### Items
+### Objects
 
-Items are objects that can be manipulated in the game. Each item has:
+Objects are objects that can be manipulated in the game. Each object has:
 
 ```
-Item {
+Object {
     Text              // Description text (may include "/NOUN/" for auto-get)
-    Location          // Current location of the item
-    InitialLocation   // Original location of the item (implicit, not stored separately)
-    AutoGet           // Text after "/" in item description (optional)
+    Location          // Current location of the object
+    InitialLocation   // Original location of the object (implicit, not stored separately)
+    AutoGet           // Text after "/" in object description (optional)
 }
 ```
 
-In the data file, items are stored as a description string followed by a location number:
+In the data file, objects are stored as a description string followed by a location number:
 
 ```
 "Glowing *FIRESTONE*" 0
@@ -180,18 +180,18 @@ In the data file, items are stored as a description string followed by a locatio
 "*Pot of RUBIES*/RUB/" 4
 ```
 
-The item description should begin with an asterisk if the object is to be recognized as a treasure; treasures have asterisks displayed around their description. If the item can be picked up or put down, the word to use for it is enclosed in slashes at the end of the description.
+The object description should begin with an asterisk if the object is to be recognized as a treasure; treasures have asterisks displayed around their description. If the object can be picked up or put down, the word to use for it is enclosed in slashes at the end of the description.
 
 For example: `"*FIRESTONE* (cold now)/FIR/"` indicates a treasure that can be picked up with the word "FIR".
 
-**Implementation Note**: When implementing item interaction, you need to handle both:
+**Implementation Note**: When implementing object interaction, you need to handle both:
 1. Explicit vocabulary-based interaction using the defined noun
 2. Direct name matching where players might type "GET MUD" even if "MUD" isn't in the vocabulary
 
 Special location values:
-* CARRIED (255): Item is carried by the player
-* DESTROYED (0): Item is not in the game (in room 0)
-* Positive numbers: Room number where the item is located
+* CARRIED (255): Object is carried by the player
+* DESTROYED (0): Object is not in the game (in room 0)
+* Positive numbers: Room number where the object is located
 * Negative numbers: Special locations (implementations may differ)
 
 Object 9 is always the artificial light source in its lighted state.
@@ -268,7 +268,7 @@ The original Scott Adams games often had titles that described key events in the
 The trailer contains:
 * Version number (e.g., 416 displays as "4.16")
 * Adventure number identifying the specific game
-* Security checksum calculated as `(2*NumActions + NumItems + version)`
+* Security checksum calculated as `(2*NumActions + NumObjects + version)`
 
 For example, in the Adventureland file:
 
@@ -288,7 +288,7 @@ The game state consists of:
 
 1. **Player location**: The current room number
 
-2. **Item locations**: Where each item currently is
+2. **Object locations**: Where each object currently is
    - Array of locations
    - Special values: CARRIED (255), DESTROYED (0), positive numbers for room locations
 
@@ -312,7 +312,7 @@ Conditions are used to determine if an action should execute. Each action can ha
 Conditions are encoded as `(Parameter * 20) + ConditionCode` .
 
 Where:
-* Parameter: A value used by the condition (often a room or item number)
+* Parameter: A value used by the condition (often a room or object number)
 * ConditionCode: The type of condition to check (see [Condition Codes](#condition-codes) in the reference section)
 
 When evaluating conditions:
@@ -324,12 +324,12 @@ Condition code 0 (PAR) is special - it always returns true but passes its parame
 
 ### Action System
 
-When conditions are met, the action's commands are executed. Commands can display messages, move items, change the player's location, modify bit flags, and more.
+When conditions are met, the action's commands are executed. Commands can display messages, move objects, change the player's location, modify bit flags, and more.
 
 Commands are encoded in these ways:
 1. Numbers 1-51: Display message with that index
 2. Numbers 102-151: Display message with index (number-50)
-3. Numbers 52-101: Execute a command (e.g., 52 = GET item, 54 = GO TO room)
+3. Numbers 52-101: Execute a command (e.g., 52 = GET object, 54 = GO TO room)
 
 In the data file, the command pairs are encoded as two numbers:
 
@@ -340,7 +340,7 @@ In the data file, the command pairs are encoded as two numbers:
 
 To decode this:
 17612 / 150 = 117 remainder 62
-So this encodes commands 117 and 62 (move item to room)
+So this encodes commands 117 and 62 (move object to room)
 
 The full range of commands is detailed in the [Action Codes](#action-codes) section.
 
@@ -360,13 +360,13 @@ The CONT command (code 73) provides a critical mechanism for chaining multiple a
 
 6. If a continuation action's conditions fail, it skips that action but keeps the continuation flag set.
 
-This mechanism is essential for complex game logic where a single player command needs to trigger multiple state changes, item movements, or messages in sequence. For example, when opening a door might involve unlocking it, swinging it open, and revealing what's behind it as separate logical steps.
+This mechanism is essential for complex game logic where a single player command needs to trigger multiple state changes, object movements, or messages in sequence. For example, when opening a door might involve unlocking it, swinging it open, and revealing what's behind it as separate logical steps.
 
 ### Light Source Handling
 
 The engine has special handling for darkness and light sources:
 
-1. Item #9 is always the light source
+1. Object #9 is always the light source
 2. If DARKBIT (15) is set, and the light source is not carried or in the current room:
    - Room description shows only "It is too dark to see"
    - Movement becomes dangerous (may result in death)
@@ -416,8 +416,8 @@ The system allows saving and restoring room locations:
 To implement a Scott Adams interpreter, you first need to parse the game data file:
 
 1. Read the header information
-2. Load actions, vocabulary, rooms, messages, and items
-3. Initialize game state (player location, item locations, etc.)
+2. Load actions, vocabulary, rooms, messages, and objects
+3. Initialize game state (player location, object locations, etc.)
 
 The format follows this sequence:
 
@@ -427,7 +427,7 @@ Action data (conditions and commands)
 Vocabulary words (verbs and nouns)
 Room data (exits and descriptions)
 Messages
-Item data (descriptions and initial locations)
+Object data (descriptions and initial locations)
 Action explanations (comments for debugging)
 Adventure version
 Adventure number
@@ -481,8 +481,8 @@ When processing a command:
 3. Match input against vocabulary
 4. Check if verb is GO and noun is a direction
    - If so, handle movement directly (don't rely solely on the action system)
-5. Check if verb is GET/TAKE or DROP with an item
-   - Implement direct item handling for these common commands
+5. Check if verb is GET/TAKE or DROP with an object
+   - Implement direct object handling for these common commands
 6. Check all actions with matching verb/noun
 7. Execute first matching action with satisfied conditions
    - If the action includes a CONT command, continue processing subsequent actions
@@ -490,7 +490,7 @@ When processing a command:
 
 **Implementation Note**: Command processing should implement multiple layers:
 1. Direct handling of common commands (movement, inventory, etc.)
-2. Special case handling for GET/TAKE and DROP with intelligent item matching
+2. Special case handling for GET/TAKE and DROP with intelligent object matching
 3. Vocabulary-based action processing via the action system
 
 This layered approach ensures that common commands work as expected even if the game's vocabulary system doesn't perfectly match player expectations.
@@ -504,32 +504,32 @@ Automatic actions (verb=0) are processed:
 
 For automatic actions where noun>0, the value in noun is used as a percentage chance of the action executing. The interpreter calls a random number generator (1-100) and only executes the action if the random number is less than the noun value. This enables random events in the game.
 
-### Item Handling
+### Object Handling
 
-Item interaction is a core part of adventure games, and your implementation should be robust:
+Object interaction is a core part of adventure games, and your implementation should be robust:
 
-1. **Item Identification**: Implement multiple ways to identify items:
+1. **Object Identification**: Implement multiple ways to identify objects:
    - By vocabulary noun number (e.g., noun 12 = "LAMP")
    - By direct name matching (e.g., "GET LAMP")
-   - By AutoGet word if defined in the item description (e.g., "/LAM/")
+   - By AutoGet word if defined in the object description (e.g., "/LAM/")
 
-2. **FindItemByName Function**: Create a function that can find items by name:
+2. **FindObjectByName Function**: Create a function that can find objects by name:
    - Match against the AutoGet word if present
-   - Otherwise, try to match words in the item description
-   - Handle special cases for items like "mud" that might need custom matching
+   - Otherwise, try to match words in the object description
+   - Handle special cases for objects like "mud" that might need custom matching
 
 3. **GET/TAKE Implementation**:
-   - Check if the item exists and is in the current room
-   - Verify the player isn't carrying too many items
-   - Move the item to CARRIED status
+   - Check if the object exists and is in the current room
+   - Verify the player isn't carrying too many objects
+   - Move the object to CARRIED status
    - Provide appropriate feedback
 
 4. **DROP Implementation**:
-   - Check if the item exists and is carried
-   - Move the item to the current room
+   - Check if the object exists and is carried
+   - Move the object to the current room
    - Provide feedback
 
-5. **Item Description Processing**:
+5. **Object Description Processing**:
    - Handle asterisks for treasures
    - Extract AutoGet words from descriptions
    - Clean descriptions for display
@@ -593,7 +593,7 @@ A robust interpreter should handle various edge cases and errors:
 
 2. **Runtime Errors**:
    - Invalid action references
-   - Out-of-range room/item references
+   - Out-of-range room/object references
    - Stack overflow from excessive CONT chaining
 
 3. **Player Input Handling**:
@@ -605,7 +605,7 @@ A robust interpreter should handle various edge cases and errors:
 
 4. **Game State Validation**:
    - Ensure room numbers are valid
-   - Verify item locations are valid
+   - Verify object locations are valid
    - Check that counter values and bit flags are within acceptable bounds
 
 When loading a game, verify the checksum to ensure data integrity.
@@ -616,13 +616,13 @@ When loading a game, verify the checksum to ensure data integrity.
 
 When designing a Scott Adams-style adventure game:
 
-1. **Economy of description**: The engine was designed for systems with limited memory, so room and item descriptions should be concise.
+1. **Economy of description**: The engine was designed for systems with limited memory, so room and object descriptions should be concise.
 
-2. **Puzzle complexity**: Despite the simple engine, complex puzzles can be created through clever use of bit flags, counters, and item manipulation.
+2. **Puzzle complexity**: Despite the simple engine, complex puzzles can be created through clever use of bit flags, counters, and object manipulation.
 
 3. **Map design**: The six-direction exit system allows for 3D spatial relationships, but many games primarily use a 2D layout with occasional vertical connections.
 
-4. **Item limits**: Players can only carry a limited number of items (defined in MaxCarry), so puzzle design should account for this.
+4. **Object limits**: Players can only carry a limited number of objects (defined in MaxCarry), so puzzle design should account for this.
 
 5. **Light source management**: Consider whether your game will use the darkness mechanics, and design appropriate puzzles around the limited light duration.
 
@@ -638,7 +638,7 @@ Here are some common patterns used in Scott Adams games:
 
 4. **Darkness mechanics**: Use the built-in light source mechanics to create areas that require a light source.
 
-5. **Object transformations**: Move one item to room 0 (destroyed) and bring another into play.
+5. **Object transformations**: Move one object to room 0 (destroyed) and bring another into play.
 
 6. **Randomized events**: Use automatic actions with percentage chances to create occasional events.
 
@@ -650,7 +650,7 @@ Here are some common patterns used in Scott Adams games:
 
 2. **Limited vocabulary**: Words are typically matched only on the first few letters, which can cause ambiguity.
 
-3. **Item carrying limit**: Use containers or storage locations to help the player manage inventory.
+3. **Object carrying limit**: Use containers or storage locations to help the player manage inventory.
 
 4. **Linear action processing**: Actions are checked in order, which can lead to unexpected behavior if not carefully designed.
 
@@ -687,24 +687,24 @@ The condition codes determine when actions can be executed. Here's how to implem
 | Code | Symbol | Description |
 |------|---------|-------------|
 | 0    | PAR     | Always true (parameter is passed to action) |
-| 1    | HAS     | Player is carrying item [parameter] |
-| 2    | IN/W    | Item [parameter] is in current room |
-| 3    | AVL     | Item [parameter] is carried or in current room |
+| 1    | HAS     | Player is carrying object [parameter] |
+| 2    | IN/W    | Object [parameter] is in current room |
+| 3    | AVL     | Object [parameter] is carried or in current room |
 | 4    | IN      | Player is in room [parameter] |
-| 5    | -IN/W   | Item [parameter] is not in current room |
-| 6    | -HAVE   | Player is not carrying item [parameter] |
+| 5    | -IN/W   | Object [parameter] is not in current room |
+| 6    | -HAVE   | Player is not carrying object [parameter] |
 | 7    | -IN     | Player is not in room [parameter] |
 | 8    | BIT     | Bit flag [parameter] is set |
 | 9    | -BIT    | Bit flag [parameter] is not set |
-| 10   | ANY     | Player is carrying at least one item |
-| 11   | -ANY    | Player is not carrying any items |
-| 12   | -AVL    | Item [parameter] is not carried or in current room |
-| 13   | -RM0    | Item [parameter] is not in room 0 (not destroyed) |
-| 14   | RM0     | Item [parameter] is in room 0 (destroyed) |
+| 10   | ANY     | Player is carrying at least one object |
+| 11   | -ANY    | Player is not carrying any objects |
+| 12   | -AVL    | Object [parameter] is not carried or in current room |
+| 13   | -RM0    | Object [parameter] is not in room 0 (not destroyed) |
+| 14   | RM0     | Object [parameter] is in room 0 (destroyed) |
 | 15   | CT<=    | Counter <= [parameter] |
 | 16   | CT>     | Counter > [parameter] |
-| 17   | ORIG    | Item [parameter] is in its original location |
-| 18   | -ORIG   | Item [parameter] is not in its original location |
+| 17   | ORIG    | Object [parameter] is in its original location |
+| 18   | -ORIG   | Object [parameter] is not in its original location |
 | 19   | CT=     | Counter = [parameter] |
 
 ### Action Codes
@@ -715,17 +715,17 @@ These action codes define what happens when conditions are met. Here's how to im
 |------|---------|-------------|
 | 0    | -       | No action (displays message 0) |
 | 1-51 | -       | Display message number 1-51 |
-| 52   | GETx    | Pick up item x (fail if carrying too many items) |
-| 53   | DROPx   | Drop item x in current room |
+| 52   | GETx    | Pick up object x (fail if carrying too many objects) |
+| 53   | DROPx   | Drop object x in current room |
 | 54   | GOTOy   | Move player to room y |
-| 55   | x->RM0  | Move item x to room 0 (destroy it) |
+| 55   | x->RM0  | Move object x to room 0 (destroy it) |
 | 56   | NIGHT   | Set darkness bit (15) |
 | 57   | DAY     | Clear darkness bit (15) |
 | 58   | SETz    | Set bit flag z |
-| 59   | x->RM0  | Move item x to room 0 (duplicate of 55) |
+| 59   | x->RM0  | Move object x to room 0 (duplicate of 55) |
 | 60   | CLRz    | Clear bit flag z |
 | 61   | DEAD    | Kill player (move to last room, show death message) |
-| 62   | x->y    | Move item x to room y |
+| 62   | x->y    | Move object x to room y |
 | 63   | FINI    | End game |
 | 64   | DspRM   | Show room description |
 | 65   | SCORE   | Show score (based on treasures stored) |
@@ -735,10 +735,10 @@ These action codes define what happens when conditions are met. Here's how to im
 | 69   | FILL    | Refill light source |
 | 70   | CLS     | Clear screen |
 | 71   | SAVE    | Save game |
-| 72   | EXx, x   | Swap locations of two items |
+| 72   | EXx, x   | Swap locations of two objects |
 | 73   | CONT    | Continue executing actions (don't stop after this one) |
-| 74   | AGETx   | Pick up item x (no carrying capacity check) |
-| 75   | BYx<-x  | Item x gets location of item y |
+| 74   | AGETx   | Pick up object x (no carrying capacity check) |
+| 75   | BYx<-x  | Object x gets location of object y |
 | 76   | DspRM   | Show room description (duplicate of 64) |
 | 77   | CT-1    | Decrement counter |
 | 78   | DspCT   | Display counter value |
@@ -759,13 +759,13 @@ These action codes define what happens when conditions are met. Here's how to im
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| LIGHT_SOURCE | 9 | Item ID for the light source |
-| CARRIED | 255 | Location value for carried items |
-| DESTROYED | 0 | Location value for destroyed items |
+| LIGHT_SOURCE | 9 | Object ID for the light source |
+| CARRIED | 255 | Location value for carried objects |
+| DESTROYED | 0 | Location value for destroyed objects |
 | DARKBIT | 15 | Bit flag for darkness |
 | LIGHTOUTBIT | 16 | Bit flag for light running out |
-| ROOM_INVENTORY | -1 | Item is in player's inventory |
-| ROOM_STORE | 0 | Item is in storage/destroyed |
+| ROOM_INVENTORY | -1 | Object is in player's inventory |
+| ROOM_STORE | 0 | Object is in storage/destroyed |
 
 ### Flag Bits
 
